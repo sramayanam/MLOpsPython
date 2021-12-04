@@ -36,14 +36,14 @@ stages:
     - template: code-quality-template.yml
     - task: AzureCLI@1
       inputs:
-        azureSubscription: '$(WORKSPACE_SVC_CONNECTION)'
-        scriptLocation: inlineScript
-        workingDirectory: $(Build.SourcesDirectory)
+        azureSubscription: 'WORKSPACE_SVC_CONNECTION'
+        scriptLocation: 'inlineScript'
         inlineScript: |
           set -e # fail on error
           export SUBSCRIPTION_ID=$(az account show --query id -o tsv)
           # Invoke the Python building and publishing a training pipeline
           python -m ml_service.pipelines.diabetes_regression_build_train_pipeline
+        workingDirectory: '$(Build.SourcesDirectory)'
       displayName: 'Publish Azure Machine Learning Pipeline'
 
 - stage: 'Trigger_AML_Pipeline'
@@ -60,9 +60,8 @@ stages:
     steps:
     - task: AzureCLI@1
       inputs:
-        azureSubscription: '$(WORKSPACE_SVC_CONNECTION)'
-        scriptLocation: inlineScript
-        workingDirectory: $(Build.SourcesDirectory)
+        azureSubscription: 'WORKSPACE_SVC_CONNECTION'
+        scriptLocation: 'inlineScript'
         inlineScript: |
           set -e # fail on error
           export SUBSCRIPTION_ID=$(az account show --query id -o tsv)
@@ -70,6 +69,7 @@ stages:
           # Set AMLPIPELINEID variable for next AML Pipeline task in next job
           AMLPIPELINEID="$(cat pipeline_id.txt)"
           echo "##vso[task.setvariable variable=AMLPIPELINEID;isOutput=true]$AMLPIPELINEID"
+        workingDirectory: '$(Build.SourcesDirectory)'
       name: 'getpipelineid'
       displayName: 'Get Pipeline ID'
   - job: "Run_ML_Pipeline"
