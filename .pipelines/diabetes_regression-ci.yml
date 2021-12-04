@@ -37,13 +37,13 @@ stages:
     - task: AzureCLI@1
       inputs:
         azureSubscription: '$(WORKSPACE_SVC_CONNECTION)'
-        scriptLocation: 'inlineScript'
+        scriptLocation: inlineScript
+        workingDirectory: $(Build.SourcesDirectory)
         inlineScript: |
           set -e # fail on error
           export SUBSCRIPTION_ID=$(az account show --query id -o tsv)
           # Invoke the Python building and publishing a training pipeline
           python -m ml_service.pipelines.diabetes_regression_build_train_pipeline
-        workingDirectory: '$(Build.SourcesDirectory)'
       displayName: 'Publish Azure Machine Learning Pipeline'
 
 - stage: 'Trigger_AML_Pipeline'
@@ -61,7 +61,8 @@ stages:
     - task: AzureCLI@1
       inputs:
         azureSubscription: '$(WORKSPACE_SVC_CONNECTION)'
-        scriptLocation: 'inlineScript'
+        scriptLocation: inlineScript
+        workingDirectory: $(Build.SourcesDirectory)
         inlineScript: |
           set -e # fail on error
           export SUBSCRIPTION_ID=$(az account show --query id -o tsv)
@@ -69,32 +70,23 @@ stages:
           # Set AMLPIPELINEID variable for next AML Pipeline task in next job
           AMLPIPELINEID="$(cat pipeline_id.txt)"
           echo "##vso[task.setvariable variable=AMLPIPELINEID;isOutput=true]$AMLPIPELINEID"
-        workingDirectory: '$(Build.SourcesDirectory)'
       name: 'getpipelineid'
       displayName: 'Get Pipeline ID'
   - job: "Run_ML_Pipeline"
     dependsOn: "Get_Pipeline_ID"
     displayName: "Trigger ML Training Pipeline"
     timeoutInMinutes: 0
-#    pool: server
+    pool: server
     variables:
       AMLPIPELINE_ID: $[ dependencies.Get_Pipeline_ID.outputs['getpipelineid.AMLPIPELINEID'] ]
     steps:
-    - task: AzureCLI@1
+    - task: ms-air-aiagility.vss-services-azureml.azureml-restApi-task.MLPublishedPipelineRestAPITask@0
+      displayName: 'Invoke ML pipeline'
       inputs:
         azureSubscription: '$(WORKSPACE_SVC_CONNECTION)'
-        scriptLocation: inlineScript
-        workingDirectory: $(Build.SourcesDirectory)
-        inlineScript: |
-          set -e # fail on error
-          az extension add -n azure-cli-ml
-          RUN_ID_TEMP=$(az ml run submit-pipeline --experiment-name $(EXPERIMENT_NAME) --pipeline-id $(AMLPIPELINE_ID) --resource-group $(RESOURCE_GROUP) --workspace-name $(WORKSPACE_NAME) --parameters model_name="$(MODEL_NAME)")
-          RUN_ID_FIRST_LINE=$(echo "$RUN_ID_TEMP" | head -n 1)
-          RUN_ID=$(echo "$RUN_ID_FIRST_LINE" | awk '{print $3}')
-          echo "RUN_ID          ::: $RUN_ID"
-          az ml run update --run $RUN_ID --experiment-name  $(EXPERIMENT_NAME) --resource-group $(RESOURCE_GROUP) --workspace-name $(WORKSPACE_NAME) --add-tag BuildId="$(Build.BuildId)"                 
-      displayName: 'Invoke ML pipeline'  
-    
+        PipelineId: '$(AMLPIPELINE_ID)'
+        ExperimentName: '$(EXPERIMENT_NAME)'
+        PipelineParameters: '"ParameterAssignments": {"model_name": "$(MODEL_NAME)"}, "tags": {"BuildId": "$(Build.BuildId)", "BuildUri": "$(BUILD_URI)"}, "StepTags": {"BuildId": "$(Build.BuildId)", "BuildUri": "$(BUILD_URI)"}'
   - job: "Training_Run_Report"
     dependsOn: "Run_ML_Pipeline"
     condition: always()
